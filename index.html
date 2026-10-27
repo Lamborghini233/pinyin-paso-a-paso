@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Pinyin Paso a Paso — built 2026-10-26 23:56; audio: edge-tts zh-CN-XiaoxiaoNeural + du.hanyupinyin.cn -->
+<!-- Pinyin Paso a Paso — built 2026-10-27 12:46; audio: edge-tts zh-CN-XiaoxiaoNeural + du.hanyupinyin.cn -->
 <html lang="es" data-theme="ios">
 <head>
   <meta charset="utf-8">
@@ -5784,6 +5784,8 @@ window.I18N = {
     "modeInitialsDesc": "你听到的是哪个声母？",
     "modeFinals": "韵母",
     "modeFinalsDesc": "你听到的是哪个韵母？",
+    "modeWhole": "整体认读",
+    "modeWholeDesc": "你听到的是哪个整体认读音节？",
     "modeTones": "声调",
     "modeTonesDesc": "你听到的是第几声？",
     "modePairs": "最小对立体",
@@ -6184,6 +6186,8 @@ window.I18N = {
     "modeInitialsDesc": "¿Qué inicial oyes?",
     "modeFinals": "Finales",
     "modeFinalsDesc": "¿Qué final oyes?",
+    "modeWhole": "Sílabas enteras",
+    "modeWholeDesc": "¿Qué sílaba entera oyes?",
     "modeTones": "Tonos",
     "modeTonesDesc": "¿Qué tono oyes?",
     "modePairs": "Pares mínimos",
@@ -6584,6 +6588,8 @@ window.I18N = {
     "modeInitialsDesc": "Which initial do you hear?",
     "modeFinals": "Finals",
     "modeFinalsDesc": "Which final do you hear?",
+    "modeWhole": "Whole syllables",
+    "modeWholeDesc": "Which whole syllable do you hear?",
     "modeTones": "Tones",
     "modeTonesDesc": "Which tone do you hear?",
     "modePairs": "Minimal pairs",
@@ -8586,6 +8592,41 @@ window.APP_DATA = (() => {
       tip: { es: "El segundo sube; el tercero empieza bajo.", en: "The second rises; the third starts low.", zh: "第二声上扬；第三声起点低。" }
     }
   ];
+
+  // Whole-syllable minimal pairs: the retroflex/dental contrast (zhi/zi,
+  // shi/si) is what the whole-syllable notes warn about most. Audio reuses the
+  // site recordings, which read both syllables in the first tone.
+  const wholePairSpecs = [
+    {
+      id: "whole_zhizi",
+      a: "zhi", b: "zi",
+      tip: {
+        es: "zhi es retrofleja (lengua curvada); zi es dental. Las dos grabaciones están en primer tono.",
+        en: "zhi is retroflex (tongue curled); zi is dental. Both clips are in the first tone.",
+        zh: "zhi 是翘舌，zi 是平舌；两段录音都是第一声。"
+      }
+    },
+    {
+      id: "whole_shisi",
+      a: "shi", b: "si",
+      tip: {
+        es: "shi es retrofleja y sorda; si es dental, como una «s» larga. Sin vocal i española.",
+        en: "shi is retroflex and voiceless; si is dental, like a long “s”. No Spanish i vowel.",
+        zh: "shi 是翘舌摩擦音；si 是平舌摩擦音，像拉长的 s；后面都没有西语的 i。"
+      }
+    }
+  ];
+  for (const spec of wholePairSpecs) {
+    const a = wholeSyllables.find((item) => item.id === spec.a);
+    const b = wholeSyllables.find((item) => item.id === spec.b);
+    minimalPairs.push({
+      id: spec.id,
+      label: `${a.letter} / ${b.letter}`,
+      a: { hz: a.demo.hz, py: a.demo.py, key: a.demo.key },
+      b: { hz: b.demo.hz, py: b.demo.py, key: b.demo.key },
+      tip: spec.tip
+    });
+  }
 
   const lessons = [
     { id: "l1", num: 1, titleKey: "lesson1Title", descKey: "lesson1Desc", sounds: ["a", "o", "e", "i", "u", "v"], tone: true },
@@ -39949,7 +39990,7 @@ window.AUDIO_DATA = {
   function weakSoundIds() {
     return Object.keys(state.progress.weak).filter((id) => {
       const sound = DATA.byId[id];
-      return sound && (sound.type === "initial" || sound.type === "final");
+      return sound && (sound.type === "initial" || sound.type === "final" || sound.type === "whole");
     });
   }
 
@@ -39958,6 +39999,7 @@ window.AUDIO_DATA = {
     const modes = [
       { id: "initials", icon: "grid", title: t("modeInitials"), desc: t("modeInitialsDesc") },
       { id: "finals", icon: "layers", title: t("modeFinals"), desc: t("modeFinalsDesc") },
+      { id: "whole", icon: "sparkle", title: t("modeWhole"), desc: t("modeWholeDesc") },
       { id: "tones", icon: "tones", title: t("modeTones"), desc: t("modeTonesDesc") },
       { id: "pairs", icon: "ear", title: t("modePairs"), desc: t("modePairsDesc") },
       { id: "weak", icon: "target", title: t("modeWeak"), desc: t("modeWeakDesc"), badge: weakCount }
@@ -39977,14 +40019,38 @@ window.AUDIO_DATA = {
     );
   }
 
+  const SOUND_POOLS = {
+    initial: () => DATA.initials,
+    final: () => DATA.finals,
+    whole: () => DATA.wholeSyllables
+  };
+
+  const SOUND_PROMPTS = {
+    initial: "modeInitialsDesc",
+    final: "modeFinalsDesc",
+    whole: "modeWholeDesc"
+  };
+
   function makeSoundQuestion(sound) {
-    const pool = sound.type === "initial" ? DATA.initials : DATA.finals;
-    const options = shuffle([sound, ...sample(pool.filter((item) => item.id !== sound.id), 3)]);
+    const pool = (SOUND_POOLS[sound.type] || SOUND_POOLS.final)();
+    const distractors = [];
+    if (sound.type === "whole") {
+      // Whole syllables are easy to tell apart unless the syllable the notes
+      // warn about (zhi/zi, chi/ci, shi/si…) is on screen, so always offer one.
+      const confusable = (sound.confused || [])
+        .map((id) => DATA.byId[id])
+        .filter((item) => item && item.type === "whole" && item.id !== sound.id);
+      if (confusable.length) distractors.push(pick(confusable));
+    }
+    const rest = pool.filter(
+      (item) => item.id !== sound.id && !distractors.includes(item)
+    );
+    const options = shuffle([sound, ...distractors, ...sample(rest, 3 - distractors.length)]);
     return {
       type: "sound",
       soundId: sound.id,
       audioKey: sound.demo.key,
-      promptKey: sound.type === "initial" ? "modeInitialsDesc" : "modeFinalsDesc",
+      promptKey: SOUND_PROMPTS[sound.type] || "modeFinalsDesc",
       options: options.map((item) => ({ value: item.id, label: item.letter, sub: item.ipa })),
       answer: sound.id
     };
@@ -40036,8 +40102,9 @@ window.AUDIO_DATA = {
 
   function buildPracticeQuestions(mode) {
     const questions = [];
-    if (mode === "initials" || mode === "finals") {
-      const pool = mode === "initials" ? DATA.initials : DATA.finals;
+    const soundType = { initials: "initial", finals: "final", whole: "whole" }[mode];
+    if (soundType) {
+      const pool = SOUND_POOLS[soundType]();
       for (let i = 0; i < 8; i++) questions.push(makeSoundQuestion(pick(pool)));
     } else if (mode === "tones") {
       for (let i = 0; i < 8; i++) questions.push(makeToneQuestion(pick(DATA.toneFamilies)));
